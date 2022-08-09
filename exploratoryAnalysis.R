@@ -19,15 +19,16 @@ p <- ggplot(df, aes(x=Date, y=ConfirmedCasesWeekLater)) +
   geom_line() + 
   xlab("Fechas") + ylab("Casos confimados una semana después") +
   scale_y_log10() + facet_wrap(~Zone)+
-  labs(title='Casos confirmados por país una semana después (log)')
+  geom_vline(xintercept=as.Date("2020-02-15"), linetype="dashed", color = "red")
+  # labs(title='Casos confirmados por país una semana después (log)')
 p 
-
+ggsave("evolution.png", p, "png", path = "img/discusion/", scale = 3)
 # La mayoría de países experimentan sus primeros casos una semana después de finales
 # de febrero.
 
 # Ahora, añadimos la estimación de casos importados para ver si existe alguna relación.
 confirmedColor = 'blue'
-estimationColor = 'red'
+estimationColor = 'black'
 p <- ggplot(df, aes(x=Date)) +
   geom_line(aes(y=ConfirmedCasesWeekLater),color=confirmedColor) + 
   geom_line(aes(y=CasesEstimation),color=estimationColor) + 
@@ -40,8 +41,11 @@ p <- ggplot(df, aes(x=Date)) +
     axis.title.y = element_text(color = confirmedColor, size=13),
     axis.title.y.right = element_text(color = estimationColor, size=13)
   )+
-  labs(title='Comparativa de casos confirmados e importados en vuelos')
+  geom_vline(xintercept=as.Date("2020-03-15"), linetype="dashed", color = "red")
+  # labs(title='Comparativa de casos confirmados e importados en vuelos')
 p 
+
+ggsave("confEstimados.png", p, "png", path = "img/discusion/", scale = 3)
 # Como se puede ver, hay un aumento conforme aumentan los casos (recordemos que
 # la escala es logarítmica), pero a partir de la segunda quincena empiezan a bajar
 # los casos importados aunque siguieran subiendo los casos (se empezaron a tomar políticas)
@@ -49,14 +53,14 @@ p
 # Correlación entre Casos Confirmados una semana después y Casos estimados por vuelos
 correlate <- df %>%
   group_by(Date) %>% 
-  summarise(pearson = cor(ConfirmedCasesWeekLater, CasesEstimation))
+  summarise(pearson = cor(log10(ConfirmedCasesWeekLater + 1), CasesEstimation))
 
 p <- ggplot(correlate, aes(x=Date, y=pearson)) +
   geom_line()+
-  labs(title='Correlación entre casos confirmados a la semana y casos importados',
-       y='Correlación')
+  labs(y='Correlación')
+  # labs(title='Correlación entre casos confirmados a la semana y casos importados')
 p
-
+ggsave("corr2.png", p, "png", path = "img/discusion/", scale = 1)
 # Tras estas gráficas, se considera que lo mejor será considerar los resultados
 # desde el 15/02 hasta el 15/03
 df <- df[df$Date >= as.Date("2020-02-15") & df$Date <= as.Date("2020-03-15"),]
@@ -82,9 +86,18 @@ p <- ggplot(df, aes(diff)) +
   geom_vline(aes(xintercept=mean(diff)),
              color="blue", linetype="dashed", size=1)+
   xlim(-0.01,0.02)+
-  labs(title='Densidad de la diferencia entre casos importados y riesgo importado',
-       x='ImportedRisk - CasesEstimation',
+  # labs(title='Densidad de la diferencia entre casos importados y riesgo importado',
+  #      x='ImportedRisk - CasesEstimation',
+  #      y='Frecuencia')
+  labs(x='ImportedRisk - CasesEstimation',
        y='Frecuencia')
 p
+ggsave("diff.png", p, "png", path = "img/discusion/", scale = 1)
 
+# Proporción de valores entre 0 y 0.01
+nrow(df[df$diff < -0.0001,])/nrow(df)
+mean(df$diff)
+sd(df$diff)
 
+# t-test correspondiente
+t.test(df$ImportedRisk, df$CasesEstimation)

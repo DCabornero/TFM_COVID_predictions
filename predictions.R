@@ -21,8 +21,15 @@ min.date = as.Date("2020-02-15")
 max.date = as.Date("2020-03-15")
 df <- df[df$Date >= min.date & df$Date <= max.date,]
 
+p <- ggplot(df[df$Zone == 'France',], aes(x=Date, y=CasesEstimation)) +
+  geom_line()+
+  labs(y='Estimación de casos importados en Francia')+
+  scale_y_log10()
+p
+
+ggsave("francia.png", p, "png", path = "img/discusion/exploratory/", scale = 1)
 # De momento, quitamos Francia e Italia
-df <- df[df$Zone != "France" & df$Zone != 'Italy',]
+df <- df[!((df$Zone == "France" & df$Date == as.Date("2020-02-21")) | df$Zone == 'Italy'),]
 
 # Añadimos columnas auxiliares
 df$logX <- log10(df$CasesEstimation + 1)
@@ -45,7 +52,8 @@ plot.df <- function(df, country = NULL, log.plot = TRUE, names=c('prediction')){
   confirmedColor = 'blue'
   estimationColor = 'red'
   p <- ggplot(df, aes(x=Date)) +
-    geom_line(aes(y=ConfirmedCasesWeekLater,colour="Confirmed")) +
+    geom_line(aes(y=ConfirmedCasesWeekLater,colour="reales")) +
+    scale_x_date(date_breaks = "10 days", date_labels = "%d-%m")+
     facet_wrap(~Zone)
   if(log.plot){
     p <- p + scale_y_log10(limits=c(1,NA)) 
@@ -55,7 +63,6 @@ plot.df <- function(df, country = NULL, log.plot = TRUE, names=c('prediction')){
   }
   p 
 }
-
 ####################################################################
 # Análisis exploratorio inicial
 ####################################################################
@@ -76,12 +83,13 @@ p <- ggplot(df, aes(ConfirmedCasesWeekLater)) +
 p
 
 # Separando por fechas
-p <- ggplot(df, aes(ConfirmedCasesWeekLater)) + 
+p <- ggplot(df[df$Date >= as.Date("2020-03-01"),], aes(ConfirmedCasesWeekLater)) + 
   geom_histogram(bins=150, color="black", fill="white")+
   geom_density(alpha=.6, fill="#FF6666") +
   labs(title=paste('Histograma de casos por fechas'),y='Frecuencia') +
   facet_wrap(~Date)
 p
+ggsave("hist-mar.png", p, "png", path = "img/discusion/predictions/hipotesis/", scale = 1)
 
 # Medias y varianzas deben ser iguales
 df.meanvar <- df %>%
@@ -107,9 +115,16 @@ p <- ggplot(df, aes(x=CasesEstimation,y=log10(ConfirmedCasesWeekLater))) +
 p
 
 # Veamos por fechas
-p <- ggplot(df, aes(x=CasesEstimation,y=log10(ConfirmedCasesWeekLater))) + 
+p <- ggplot(df, aes(x=CasesEstimation,y=log10(ConfirmedCasesWeekLater+1))) + 
   geom_point()+
-  labs(x='Infectados entrantes',y='log(Casos Confirmados una semana después)')+
+  labs(x='Casos Estimados',y='log(Casos Confirmados una semana después + 1)')+
+  facet_wrap(~Date)
+p
+ggsave("lineal1-2.png", p, "png", path = "img/discusion/predictions/hipotesis/", scale = 2)
+
+p <- ggplot(df, aes(x=log10(CasesEstimation),y=log10(ConfirmedCasesWeekLater+1))) + 
+  geom_point()+
+  labs(x='log(Infectados entrantes)',y='log(Casos Confirmados una semana después)')+
   facet_wrap(~Date)
 p
 
@@ -133,6 +148,7 @@ p <- ggplot(df, aes(x=CasesEstimation^pot,y=log10(ConfirmedCasesWeekLater))) +
   facet_wrap(~Zone)
 p
 
+
 # Aparte de separar por países, podemos separar por fechas, en especial el test set
 pot = 1/3
 p <- ggplot(df, aes(x=ConfirmedCases^pot,y=log10(ConfirmedCasesWeekLater))) + 
@@ -140,6 +156,7 @@ p <- ggplot(df, aes(x=ConfirmedCases^pot,y=log10(ConfirmedCasesWeekLater))) +
   labs(x='Infectados entrantes ^ 1/3',y='log(Casos Confirmados una semana después)')+
   facet_wrap(~Date)
 p
+ggsave("lineal2.png", p, "png", path = "img/discusion/predictions/hipotesis/", scale = 2)
 
 # Ahora, veamos la relación con los casos confirmados
 pot = 1/5
@@ -148,7 +165,25 @@ p <- ggplot(df, aes(x=ConfirmedCases^pot,y=log10(ConfirmedCasesWeekLater))) +
   labs(x='Infectados confirmados ^ 1/5',y='log(Casos Confirmados una semana después)')+
   facet_wrap(~Date)
 p
+ggsave("lineal3.png", p, "png", path = "img/discusion/predictions/hipotesis/", scale = 2)
 
+# Por último, veamos la relación entre las dos variables independientes
+p <- ggplot(df, aes(x=EstimationCubeRoot,y=ImportedCubeRoot)) + 
+  geom_point()+
+  labs(x='Contagiados importados ^ 1/3',y='Casos importados ^ 1/3')+
+  facet_wrap(~Date)
+p
+
+# Y su correlación
+correlate <- df %>%
+  group_by(Date) %>% 
+  summarise(pearson = cor(EstimationCubeRoot, ImportedCubeRoot))
+
+p <- ggplot(correlate, aes(x=Date, y=pearson)) +
+  geom_line()+
+  labs(y='Correlación')
+# labs(title='Correlación entre casos confirmados a la semana y casos importados')
+p
 ####################################################################
 # Regresión de Poisson
 ####################################################################
@@ -268,7 +303,7 @@ day.by.day <- function(data, family, formula = 1){
   return(data[data$Date != dates[1],])
 }
 
-names = c('quasipoisson')
+names = c('poisson','quasipoisson','binomial')
 results <- df
 for(name in names){
   results <- day.by.day(results, name, formula = 3)
@@ -368,7 +403,7 @@ for(family in families){
     colnames(df.confint) <-  gsub("\\)","",colnames(df.confint))
   }
   p <- ggplot(df.confint, aes(x=Date)) +
-    ggtitle(paste0("Estimación de coeficientes en el modelo ", family))+
+    # ggtitle(paste0("Estimación de coeficientes en el modelo ", family))+
     labs(y="Coeficientes")
   for(feat in features){
     feat <- gsub("\\(","",feat)
@@ -377,8 +412,8 @@ for(family in families){
     p <- p + geom_line(aes_string(y=feat,colour=shQuote(feat)))+
       geom_ribbon(aes_string(ymin = paste0(feat,"_low"), ymax = paste0(feat,"_high")), alpha = 0.1)
   }
-  x11()
-  plot(p)
+  ggsave(paste0("coef_",family,".png"),
+         p, "png", path = "img/discusion/predictions/vars-coef", scale = 1)
 }
 
 ################################################################
@@ -449,12 +484,13 @@ for(family in families){
   df.pvals <- create.pvals(df, formula = 3, family = family)
   p <- ggplot(df.pvals, aes(x=Date)) +
     geom_line(aes_string(y='Intercept',colour=shQuote('Intercept')))+
-    geom_line(aes(y=EstimationCubeRoot,colour='FlightEstimation'))+
-    geom_line(aes(y=ConfirmedRoot,colour='ConfirmedCases'))+
+    geom_line(aes(y=EstimationCubeRoot,colour='ContagiosImportados'))+
+    geom_line(aes(y=ConfirmedRoot,colour='CasosConfirmados'))+
     geom_hline(yintercept=0.05, linetype="dashed", color = "red")+
-    labs(title=paste0("Evolución del p-valor en ",family),y='Coeficientes')
-  x11()
-  plot(p)
+    # labs(title=paste0("Evolución del p-valor en ",family),y='Coeficientes')
+    labs(y='Coeficientes')
+  ggsave(paste0("pval_",family,".png"),
+         p, "png", path = "img/discusion/predictions/vars-coef", scale = 1)
 }
 
 
@@ -517,12 +553,14 @@ plot.anova <- function(df, formula1, formula2, families){
                            families = families)
   
   p <- ggplot(df.anova, aes(x=Date)) +
-    labs(title="Evolución del p-valor de ANOVA",y='p-valor')+
+    # labs(title="Evolución del p-valor de ANOVA",y='p-valor')+
+    labs(y='p-valor')+
     geom_hline(yintercept=0.05, linetype="dashed", color = "red")
   for(family in families){
     p <- p + geom_line(aes_string(y=family,colour=shQuote(family)))
   }
   plot(p)
+  ggsave("anova.png", p, "png", path = "img/discusion/predictions/vars-coef", scale = 1)
   return(df.anova)
 }
 
@@ -532,7 +570,7 @@ families = c("poisson","quasipoisson",'binomial')
 df.anova <- plot.anova(df,formula1,formula2,families)
 
 # Probamos algunas columnas extra:
-families = c("poisson","quasipoisson")
+families = c("poisson","quasipoisson",'binomial')
 df$aux <- df$ImportedRisk^(1/3)
 formula1 = ConfirmedCasesWeekLater ~ EstimationCubeRoot + ConfirmedRoot 
 formula2 = ConfirmedCasesWeekLater ~ EstimationCubeRoot + ConfirmedRoot + aux
@@ -589,10 +627,11 @@ plot.residuals <- function(df, formula, families){
   
   for(family in families){
     p <- ggplot(df.residuals, aes(x=Date)) +
-      labs(title=paste0("Evolución de los residuos en ",family),y='Residuos')+
+      # labs(title=paste0("Evolución de los residuos en ",family),y='Residuos')+
+      labs(y='residuos')+
       geom_point(aes_string(y=family))
-      x11()
-      plot(p)
+      ggsave(paste0("resi_",family,".png"),
+           p, "png", path = "img/discusion/predictions/residuos", scale = 1)
   }
   return(df.residuals)
 }
@@ -600,6 +639,15 @@ plot.residuals <- function(df, formula, families){
 formula = ConfirmedCasesWeekLater ~ EstimationCubeRoot + ConfirmedRoot
 families = c("poisson","quasipoisson",'binomial')
 df.residuals <- plot.residuals(df,formula,families)
+
+# Residuo vs Fitted
+fecha = as.Date("2020-03-04")
+df.res.vs.fit <- data.frame(Residuos = df.residuals[df.residuals$Date == fecha,]$poisson,
+                            ValorAjustado = results[results$Date == fecha,]$poisson)
+p <- ggplot(df.res.vs.fit, aes(x=ValorAjustado, y=Residuos)) +
+  geom_point()
+p
+
 
 # Residuo = obs - pred?
 data.train <- df[df$Date == "2020-02-27",]
@@ -684,18 +732,20 @@ plot.goodness <- function(df, formula, families, type=1){
   }
   
   p <- ggplot(df.goodness, aes(x=Date)) +
-    labs(title=paste0("Evolución de la bondad de ajuste: ",title),y='p-valor')+
+    # labs(title=paste0("Evolución de la bondad de ajuste: ",title),y='p-valor')+
+    labs(y='p-valor')+
     geom_hline(yintercept=0.05, linetype="dashed", color = "red")
   for(family in families){
     p <- p + geom_line(aes_string(y=family,colour=shQuote(family)))
   }
-  plot(p)
+  ggsave(paste0("goodness_",type,".png"),
+         p, "png", path = "img/discusion/predictions/residuos", scale = 1)
   return(df.goodness)
 }
 
 formula = ConfirmedCasesWeekLater ~ EstimationCubeRoot + ConfirmedRoot
 families = c("poisson","quasipoisson",'binomial')
-df.goodness <- plot.goodness(df,formula,families, type=2)
+df.goodness <- plot.goodness(df,formula,families, type=1)
 
 ####################################################################
 # Overdispersion
@@ -712,12 +762,14 @@ df.meanvar$Div <- df.meanvar$Var / df.meanvar$Mean
 df.meanvar
 
 p <- ggplot(df.meanvar, aes(x=Date, y=Div)) +
-  labs(title=paste0("Evolución del cociente de varianza y media"),y='Varianza/Media')+
+  # labs(title=paste0("Evolución del cociente de varianza y media"),y='Varianza/Media')+
+  labs(y='Varianza/Media')+
   geom_hline(yintercept=1, linetype="dashed", color = "red")+
   geom_line()+
   scale_y_log10()
   
 plot(p)
+ggsave("meanvar.png", p, "png", path = "img/discusion/predictions/hipotesis/", scale = 1)
 
 # Obviamente, no se cumple la suposición inicial de Poisson
 # Veamos cómo evoluciona el parámetro de dispersión en una quasi-Poisson
@@ -752,15 +804,17 @@ create.overdispersion <- function(df, formula, family='quasipoisson'){
   return(df.over)
 }
 
-family = 'quasipoisson'
+family = 'binomial'
 df.over <- create.overdispersion(df, formula, family=family)
 
 p <- ggplot(df.over, aes(x=Date, y=Overdispersion)) +
-  labs(title=paste0("Evolución de la sobredispersión en un modelo ", family),y='Parámetro de Sobredisp.')+
+  # labs(title=paste0("Evolución de la sobredispersión en un modelo ", family),y='Parámetro de Sobredisp.')+
+  labs(y='Parámetro de Sobredisp.')+
   geom_hline(yintercept=1, linetype="dashed", color = "red")+
   scale_y_log10()+
   geom_line()
-p
+ggsave(paste0("over",family,".png"),
+       p, "png", path = "img/discusion/predictions/over", scale = 1)
 
 
 #############################################################################
@@ -817,3 +871,84 @@ for(name in names){
 }
 row.names(mape.df) <- c("Casos Estimados", "Riesgo Importado")
 mape.df
+
+
+# Por días
+names = c('poisson', 'quasipoisson', 'binomial')
+formulas = c(3,4)
+fechas <- unique(df$Date)[-1]
+
+df.errors <- data.frame(matrix(ncol=5, nrow=0))
+colnames(df.errors) <- c("Date",'Variable','Modelo','RMSE','SMAPE')
+df.errors[,"Date"] <- as.Date(df.errors[,"Date"],format = "%Y-%m-%d")
+
+
+for(name in names){
+  col <- c()
+  for (form in formulas){
+    result <- day.by.day(df,name,formula=form)
+    for(f in as.list(fechas)){
+      new.row <- list(f,form,name)
+      aux.res <- result[result$Date == f,]
+      new.row <- append(new.row,rmse(aux.res[,"ConfirmedCasesWeekLater"],aux.res[,name]))
+      new.row <- append(new.row,smape(aux.res[,"ConfirmedCasesWeekLater"],aux.res[,name]))
+      df.errors[nrow(df.errors) + 1,] <- new.row
+    }
+    
+  }
+}
+
+errors = c('RMSE','SMAPE')
+names = c('poisson', 'quasipoisson', 'binomial')
+formulas = c(3,4)
+
+# for(err in errors){
+#   for(name in names){
+#     aux.df <- data.frame(
+#       "Date" = df.errors[df.errors[,"Modelo"] == name & df.errors[,'Variable'] == 3,'Date'],
+#       "CasesEstimation" = df.errors[df.errors[,"Modelo"] == name & df.errors[,'Variable'] == 3,err],
+#       "ImportedRisk" = df.errors[df.errors[,"Modelo"] == name & df.errors[,'Variable'] == 4,err]
+#     )
+#     p <- ggplot(aux.df, aes(x=Date)) +
+#       geom_line(aes(y=CasesEstimation,colour='CasesEstimation'))+
+#       geom_line(aes(y=ImportedRisk,colour='ImportedRisk'))
+#     ggsave(paste0(err,name,".png"),
+#            p, "png", path = "img/discusion/predictions/errors", scale = 1)
+#   }
+# }
+
+for(err in errors){
+  aux.df <- data.frame(
+    "Date" = df.errors[df.errors[,"Modelo"] == name & df.errors[,'Variable'] == 3,'Date']
+  )
+  for(name in names){
+    aux.df[,name] <- df.errors[df.errors[,"Modelo"] == name & df.errors[,'Variable'] == 3,err]
+  }
+  p <- ggplot(aux.df, aes(x=Date)) +
+    labs(y=err)
+  for(name in names){
+    p <- p + geom_line(aes_string(y=name,colour=shQuote(name)))
+  }
+  ggsave(paste0(err,".png"),
+         p, "png", path = "img/discusion/predictions/errors", scale = 1)
+}
+
+# Diferencia de errores entre estimation y riesgo importado
+for(err in errors){
+  aux.df <- data.frame(
+    "Date" = df.errors[df.errors[,"Modelo"] == name & df.errors[,'Variable'] == 3,'Date']
+  )
+  for(name in names){
+    aux.df[,name] <- df.errors[df.errors[,"Modelo"] == name & df.errors[,'Variable'] == 3,err] -
+      df.errors[df.errors[,"Modelo"] == name & df.errors[,'Variable'] == 4,err]
+  }
+  p <- ggplot(aux.df, aes(x=Date)) +
+    labs(y=err)
+  for(name in names){
+    p <- p + geom_line(aes_string(y=name,colour=shQuote(name)))
+  }
+  ggsave(paste0("diff_",err,".png"),
+         p, "png", path = "img/discusion/predictions/errors", scale = 1)
+}
+
+
